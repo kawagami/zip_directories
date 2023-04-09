@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::time::Instant;
+use zip::read::ZipArchive;
 use zip::write::FileOptions;
 use zip::ZipWriter;
 
@@ -25,6 +26,16 @@ impl Directories {
 fn main() {
     let start = Instant::now();
 
+    // unzip_all_zipfiles();
+
+    zip_all_directories();
+
+    // 計算執行時間並輸出
+    let duration = start.elapsed();
+    println!("Total time elapsed: {:?}", duration);
+}
+
+fn zip_all_directories() {
     let pattern = "D:/temp/*/"; // 加上 / 限制只匹配子資料夾
     let mut collect = Directories::new();
     for entry in glob(pattern).expect("Failed to read glob pattern") {
@@ -70,8 +81,49 @@ fn main() {
             println!("Failed to compress directory: {:?}", path);
         }
     });
+}
 
-    // 計算執行時間並輸出
-    let duration = start.elapsed();
-    println!("Total time elapsed: {:?}", duration);
+fn unzip_all_zipfiles() {
+    let pattern = "D:/temp/*.zip";
+    let mut zip_files = vec![];
+
+    // 讀取所有符合 pattern 的 zip 檔案
+    for entry in glob::glob(pattern).expect("Failed to read glob pattern") {
+        if let Ok(path) = entry {
+            zip_files.push(path);
+        }
+    }
+
+    // 使用 rayon 並行處理每個 zip 檔案
+    zip_files.into_par_iter().for_each(|zip_path| {
+        println!("Unzipping file {:?}", zip_path);
+
+        // 解壓縮至與 zip 檔案同名的資料夾
+        let unzip_dir = zip_path.with_extension("");
+        let mut zip_archive = ZipArchive::new(fs::File::open(&zip_path).unwrap()).unwrap();
+
+        fs::create_dir(&unzip_dir).unwrap();
+
+        for i in 0..zip_archive.len() {
+            let mut file = zip_archive.by_index(i).unwrap();
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).unwrap();
+
+            let file_path = unzip_dir.join(file.name());
+            if file.name().ends_with('/') {
+                fs::create_dir_all(&file_path).unwrap();
+            } else {
+                fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+                fs::File::create(&file_path)
+                    .unwrap()
+                    .write_all(&buffer)
+                    .unwrap();
+            }
+        }
+
+        // 解壓縮完成後，移除原始 zip 檔案
+        fs::remove_file(&zip_path).unwrap();
+
+        println!("Unzipping file {:?} completed.", zip_path);
+    });
 }
