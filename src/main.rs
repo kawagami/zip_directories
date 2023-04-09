@@ -4,6 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
+use std::time::Instant;
 use zip::write::FileOptions;
 use zip::ZipWriter;
 
@@ -22,6 +23,8 @@ impl Directories {
 }
 
 fn main() {
+    let start = Instant::now();
+
     let pattern = "D:/temp/*/"; // 加上 / 限制只匹配子資料夾
     let mut collect = Directories::new();
     for entry in glob(pattern).expect("Failed to read glob pattern") {
@@ -67,4 +70,8 @@ fn main() {
             println!("Failed to compress directory: {:?}", path);
         }
     });
+
+    // 計算執行時間並輸出
+    let duration = start.elapsed();
+    println!("Total time elapsed: {:?}", duration);
 }
