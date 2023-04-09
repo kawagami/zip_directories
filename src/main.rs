@@ -1,3 +1,5 @@
+use glob::glob;
+use rayon::prelude::*;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
@@ -5,9 +7,7 @@ use std::path::PathBuf;
 use zip::write::FileOptions;
 use zip::ZipWriter;
 
-use glob::glob;
-use rayon::prelude::*;
-
+// 定義一個結構來存放所有資料夾的路徑
 struct Directories {
     pathes: Vec<PathBuf>,
 }
@@ -27,23 +27,25 @@ fn main() {
     for entry in glob(pattern).expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                // 在这里把 path 加入 collect
-                collect.add(path);
+                collect.add(path); // 把找到的資料夾路徑存入 collect 結構
             }
             Err(e) => println!("{:?}", e),
         }
     }
 
     collect.pathes.into_par_iter().for_each(|path| {
+        // 設定要產生的 zip 檔案路徑和檔名
         let zip_file_path = path.with_extension("zip");
+        // 建立要壓縮的檔案的輸出串流
         let file = File::create(&zip_file_path).unwrap();
-        let mut zip = ZipWriter::new(file);
+        let mut zip = ZipWriter::new(file); // 建立壓縮物件
         let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
+        // 使用 walkdir 來遍歷資料夾下的所有檔案，並進行壓縮
         walkdir::WalkDir::new(&path)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| !e.path().is_dir())
+            .filter(|e| !e.path().is_dir()) // 只處理檔案
             .for_each(|e| {
                 let file_path = e.path().strip_prefix(&path).unwrap();
                 zip.start_file_from_path(file_path, options).unwrap();
@@ -56,9 +58,13 @@ fn main() {
 
         // 壓縮成功後，移除原始資料夾
         if zip.finish().is_ok() {
-            if let Err(e) = fs::remove_dir_all(path) {
+            if let Err(e) = fs::remove_dir_all(&path) {
                 println!("Failed to remove directory: {:?}", e);
+            } else {
+                println!("Successfully compressed and removed directory: {:?}", path);
             }
+        } else {
+            println!("Failed to compress directory: {:?}", path);
         }
     });
 }
