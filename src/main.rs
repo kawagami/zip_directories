@@ -11,15 +11,23 @@ use zip::ZipWriter;
 
 // 定義一個結構來存放所有資料夾的路徑
 struct Directories {
-    pathes: Vec<PathBuf>,
+    images_directories: Vec<PathBuf>,
+    zip_files_directories: Vec<PathBuf>,
 }
 
 impl Directories {
     fn new() -> Self {
-        Self { pathes: vec![] }
+        Self {
+            images_directories: vec![],
+            zip_files_directories: vec![],
+        }
     }
     fn add(&mut self, path_str: PathBuf) {
-        self.pathes.push(path_str);
+        if !contains_zip_file(&path_str) {
+            self.images_directories.push(path_str);
+        } else {
+            self.zip_files_directories.push(path_str);
+        }
     }
 }
 
@@ -47,7 +55,12 @@ fn zip_all_directories() {
         }
     }
 
-    collect.pathes.into_par_iter().for_each(|path| {
+    // handle images_directories
+    println!(
+        "\nimages_directories len : {}\n",
+        collect.images_directories.len()
+    );
+    collect.images_directories.into_par_iter().for_each(|path| {
         // 設定要產生的 zip 檔案路徑和檔名
         let zip_file_path = path.with_extension("zip");
         // 建立要壓縮的檔案的輸出串流
@@ -81,6 +94,36 @@ fn zip_all_directories() {
             println!("Failed to compress directory: {:?}", path);
         }
     });
+
+    // handle zip_files_directories
+    println!(
+        "\nzip_files_directories len : {}\n",
+        collect.zip_files_directories.len()
+    );
+    collect.zip_files_directories.into_par_iter().for_each({
+        |zip_file_directory|
+        // 取得 zip_file_directory 裡面的 PathBuf
+        match get_first_file_in_directory(&zip_file_directory) {
+            // 檢查是否只有一個 zip file
+            Some(zip_file) => {
+                // Do something with zip_file
+                println!("renaming zip_file: {:?}", zip_file);
+
+                // rename zip file
+                fs::rename(&zip_file, zip_file_directory.with_extension("zip"))
+                    .expect("rename fail");
+
+                // remove 此 zip_file_directory
+                fs::remove_dir_all(&zip_file_directory).expect("remove dir fail");
+
+                println!("rename succeed with {:?}", zip_file);
+            }
+            None => {
+                // Handle case where directory is empty
+                println!("Directory is empty");
+            }
+        }
+    })
 }
 
 fn unzip_all_zipfiles() {
@@ -126,4 +169,33 @@ fn unzip_all_zipfiles() {
 
         println!("Unzipping file {:?} completed.", zip_path);
     });
+}
+
+fn contains_zip_file(path: &PathBuf) -> bool {
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if let Some(extension) = entry.path().extension() {
+                    if extension == "zip" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn get_first_file_in_directory(path: &PathBuf) -> Option<PathBuf> {
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    return Some(file_path);
+                }
+            }
+        }
+    }
+    None
 }
